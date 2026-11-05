@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {chipBreakdown} from '../src/visuals.js';
+test('Chip stack denominations represent exact balances, including split-pot remainders',()=>{for(const amount of [0,1,3,5,11,127,495,500,1001,9999]){const chips=chipBreakdown(amount);assert.equal(chips.reduce((sum,c)=>sum+c.value*c.count,0),amount);assert.ok(chips.every(c=>Number.isInteger(c.count)&&c.count>0))}});

@@ -1,0 +1,13 @@
+{
+  "name": "table-club",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test --test-isolation=none",
+    "export": "node scripts/export.mjs",
+    "package": "python3 scripts/package.py"
+  }
+}
