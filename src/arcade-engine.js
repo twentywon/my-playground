@@ -27,7 +27,68 @@ export const mazeMap=['###################','#o......#......o..#','#.##.##.#.##.
 export function mazeCreate(seed=1){const pellets={};mazeMap.forEach((row,y)=>[...row].forEach((v,x)=>{if(v==='.'||v==='o')pellets[x+','+y]=v==='o'?50:10}));delete pellets['1,13'];return {seed,x:1,y:13,dir:{x:0,y:0},next:{x:0,y:0},ghosts:[{x:8,y:9},{x:9,y:9},{x:10,y:9},{x:9,y:8}],pellets,score:0,lives:1,power:0,ticks:0,over:false,won:false,invulnerable:20}}
 function mazeOpen(x,y){return mazeMap[y]?.[x]&&mazeMap[y][x]!=='#'}
 export function mazeDirection(s,x,y){if(Math.abs(x)+Math.abs(y)===1)s.next={x,y}}
-export function mazeTick(state){if(state.over)return state;const s={...state,dir:{...state.dir},next:{...state.next},ghosts:state.ghosts.map(g=>({...g})),pellets:{...state.pellets}};s.ticks++;s.power=Math.max(0,s.power-1);s.invulnerable=Math.max(0,s.invulnerable-1);if(mazeOpen(s.x+s.next.x,s.y+s.next.y))s.dir=s.next;if(mazeOpen(s.x+s.dir.x,s.y+s.dir.y)){s.x+=s.dir.x;s.y+=s.dir.y}const key=s.x+','+s.y;if(s.pellets[key]){s.score+=s.pellets[key];if(s.pellets[key]===50)s.power=45;delete s.pellets[key]}const hit=()=>{for(const g of s.ghosts)if(g.x===s.x&&g.y===s.y){if(s.power){s.score+=200;g.x=9;g.y=9}else if(!s.invulnerable){s.lives--;s.x=9;s.y=11;s.dir={x:0,y:0};s.next={x:0,y:0};s.ghosts=[{x:8,y:9},{x:9,y:9},{x:10,y:9}];s.invulnerable=12;if(!s.lives)s.over=true;break}}};hit();if(!s.over)s.ghosts.forEach((g,i)=>{const patrols=[[[1,1],[7,3],[1,5]],[[17,1],[11,3],[17,5]],[[1,13],[6,11],[4,7]],[[17,13],[12,11],[14,7]]];g.cooldown=Math.max(0,(g.cooldown||0)-1);g.chase=Math.max(0,(g.chase||0)-1);if(!g.chase&&!g.cooldown&&Math.abs(g.x-s.x)+Math.abs(g.y-s.y)<=4){g.chase=7+i;g.cooldown=28+i*3}let waypoint=g.waypoint||0;const route=patrols[i%4];if(Math.abs(g.x-route[waypoint][0])+Math.abs(g.y-route[waypoint][1])<=1)waypoint=(waypoint+1)%route.length;g.waypoint=waypoint;const target=g.chase&&!s.power?{x:s.x+(i===1?s.dir.x*2:0),y:s.y+(i===1?s.dir.y*2:0)}:{x:route[waypoint][0],y:route[waypoint][1]};const moves=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>mazeOpen(g.x+dx,g.y+dy));let best=null,value=Infinity;for(const [dx,dy]of moves){const xx=g.x+dx,yy=g.y+dy;let score;if(s.power)score=-Math.abs(xx-s.x)-Math.abs(yy-s.y);else score=mazePathDistance(xx,yy,target.x,target.y);if(g.prevX===xx&&g.prevY===yy&&moves.length>1)score+=6;score+=s.ghosts.slice(0,i).some(o=>o.x===xx&&o.y===yy)?1:0;if(score<value){value=score;best={x:xx,y:yy}}}if(best){g.prevX=g.x;g.prevY=g.y;g.x=best.x;g.y=best.y}});hit();if(!Object.keys(s.pellets).length){s.over=true;s.won=true;s.score+=500}return s}
+const mazeGhostHomes=[[8,9],[9,9],[10,9],[9,8]];
+const mazePatrols=[[[1,1],[7,3],[1,5]],[[17,1],[11,3],[17,5]],[[1,13],[6,11],[4,7]],[[17,13],[12,11],[14,7]]];
+function mazeGhostMove(s,g,i){
+ if(g.respawn>0)return;
+ g.cooldown=Math.max(0,(g.cooldown||0)-1);g.chase=Math.max(0,(g.chase||0)-1);
+ if(!g.chase&&!g.cooldown&&Math.abs(g.x-s.x)+Math.abs(g.y-s.y)<=4){g.chase=7+i;g.cooldown=28+i*3;}
+ let waypoint=g.waypoint||0;const route=mazePatrols[i%4];
+ if(Math.abs(g.x-route[waypoint][0])+Math.abs(g.y-route[waypoint][1])<=1)waypoint=(waypoint+1)%route.length;
+ g.waypoint=waypoint;
+ const target=g.chase&&!s.power?{x:s.x+(i===1?s.dir.x*2:0),y:s.y+(i===1?s.dir.y*2:0)}:{x:route[waypoint][0],y:route[waypoint][1]};
+ const moves=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>mazeOpen(g.x+dx,g.y+dy));
+ let best=null,value=Infinity;
+ for(const [dx,dy]of moves){
+  const xx=g.x+dx,yy=g.y+dy;
+  let score=s.power?-Math.abs(xx-s.x)-Math.abs(yy-s.y):mazePathDistance(xx,yy,target.x,target.y);
+  if(g.prevX===xx&&g.prevY===yy&&moves.length>1)score+=6;
+  if(s.ghosts.slice(0,i).some(o=>o.x===xx&&o.y===yy))score++;
+  if(score<value){value=score;best={x:xx,y:yy};}
+ }
+ if(best){g.prevX=g.x;g.prevY=g.y;g.x=best.x;g.y=best.y;}
+}
+const mazeSamePoint=(a,b)=>a.x===b.x&&a.y===b.y;
+export function mazeTick(state){
+ if(state.over)return state;
+ const s={...state,dir:{...state.dir},next:{...state.next},ghosts:state.ghosts.map(g=>({...g})),pellets:{...state.pellets},ticks:state.ticks+1,collision:null};
+ if(mazeOpen(s.x+s.next.x,s.y+s.next.y))s.dir={...s.next};
+ if(mazeOpen(s.x+s.dir.x,s.y+s.dir.y)){s.x+=s.dir.x;s.y+=s.dir.y;}
+ const destination={x:s.x,y:s.y},key=s.x+','+s.y,pellet=s.pellets[key]||0;
+ // Plan both actors' moves before deciding contact. Following a departing ghost
+ // is safe; sharing a destination or swapping places in a corridor is contact.
+ s.ghosts.forEach((g,i)=>mazeGhostMove(s,g,i));
+ const contacts=[];
+ s.ghosts.forEach((g,i)=>{
+  const old=state.ghosts[i];if(old.respawn>0)return;
+  const atStart=mazeSamePoint(state,old),swap=mazeSamePoint(state,g)&&mazeSamePoint(destination,old),atEnd=mazeSamePoint(destination,g);
+  if(atStart||swap||atEnd)contacts.push({i,time:atStart?0:swap?.5:1});
+ });
+ contacts.sort((a,b)=>a.time-b.time);
+ const eaten=new Set();
+ for(const {i,time}of contacts){
+  const g=s.ghosts[i],powered=state.power>0||pellet===50&&time===1;
+  if(powered){
+   s.score+=200;eaten.add(i);const [x,y]=mazeGhostHomes[i%4];
+   Object.assign(g,{x,y,prevX:x,prevY:y,respawn:8,chase:0,cooldown:12});
+  }else if(!state.invulnerable){
+   s.lives=0;s.over=true;s.won=false;
+   s.x=state.x+(destination.x-state.x)*time;s.y=state.y+(destination.y-state.y)*time;
+   s.ghosts.forEach((ghost,j)=>{if(eaten.has(j))return;const old=state.ghosts[j];ghost.x=old.x+(ghost.x-old.x)*time;ghost.y=old.y+(ghost.y-old.y)*time;});
+   s.collision={x:s.x,y:s.y,ghost:i,time};break;
+  }
+ }
+ // A power pellet protects at arrival, not retroactively during an earlier swap.
+ // Death takes precedence over clearing the board on the same move.
+ if(pellet&&(!s.over||s.collision.time===1)){
+  s.score+=pellet;delete s.pellets[key];if(pellet===50)s.power=45;
+ }
+ if(pellet!==50||s.over)s.power=Math.max(0,state.power-1);
+ s.invulnerable=Math.max(0,state.invulnerable-1);
+ s.ghosts.forEach((g,i)=>{if(!eaten.has(i)&&g.respawn>0)g.respawn--;});
+ if(!s.over&&!Object.keys(s.pellets).length){s.over=true;s.won=true;s.score+=500;}
+ return s;
+}
 export function mazeAI(s){const queue=[{x:s.x,y:s.y,first:null}],seen=new Set([s.x+','+s.y]);for(let i=0;i<queue.length;i++){const p=queue[i];if(p.first&&s.pellets[p.x+','+p.y])return p.first;for(const [x,y]of [[1,0],[-1,0],[0,1],[0,-1]]){const xx=p.x+x,yy=p.y+y,k=xx+','+yy;if(!mazeOpen(xx,yy)||seen.has(k)||!s.power&&s.ghosts.some(g=>Math.abs(g.x-xx)+Math.abs(g.y-yy)<=1))continue;seen.add(k);queue.push({x:xx,y:yy,first:p.first||{x,y}})}}return [[1,0],[-1,0],[0,1],[0,-1]].map(([x,y])=>({x,y})).filter(d=>mazeOpen(s.x+d.x,s.y+d.y)).sort((a,b)=>Math.min(...s.ghosts.map(g=>Math.abs(g.x-s.x-b.x)+Math.abs(g.y-s.y-b.y)))-Math.min(...s.ghosts.map(g=>Math.abs(g.x-s.x-a.x)+Math.abs(g.y-s.y-a.y))))[0]||{x:0,y:0}}
 export function breakoutCreate(seed=1,map='classic'){return {seed,map,paddle:250,ball:{x:250,y:405,vx:2.8,vy:-3.5},bricks:Array.from({length:48},(_,i)=>({x:20+i%8*58,y:40+Math.floor(i/8)*24,on:true,row:Math.floor(i/8),col:i%8})).filter(b=>map==='pyramid'?Math.abs(b.col-3.5)<=b.row*.7+.5:map==='tunnel'?b.row===0||b.row===5||b.col===0||b.col===7||b.row>=2&&b.row<=3&&b.col>=3&&b.col<=4:map==='checker'?(b.row+b.col)%2===0:map==='fortress'?b.col<=1||b.col>=6||b.row===0||b.row===3||b.row===5:true),score:0,lives:3,over:false,won:false,extraBalls:[],items:[],effects:{wide:0,slow:0,sticky:0,laser:0,fire:0},lasers:[],shield:0,paddleWidth:92,frames:0}}
 export const breakoutItemTypes=['wide','slow','multi','life','sticky','laser','fire','shield'];
@@ -72,7 +133,31 @@ function hingeCollision(stone,box){const cx=Math.max(box.x,Math.min(box.x+box.w,
 
 export function flickShoot(s,id,dx,dy){if(s.phase!=='aim'||s.winner)return false;const stone=s.stones.find(v=>v.id===id&&v.on&&v.p===s.p);if(!stone)return false;const power=Math.min(16,Math.hypot(dx,dy)*.11),len=Math.hypot(dx,dy);if(len<5)return false;const speed=power*(stone.power||1)/Math.sqrt(stone.mass||1);stone.vx=dx/len*speed;stone.vy=dy/len*speed;s.phase='moving';s.shots++;return true}
 export function flickTick(s,dt=1){if(s.phase!=='moving')return;dt=Math.max(0,Math.min(3,dt));const steps=Math.max(2,Math.ceil(Math.max(...s.stones.map(v=>Math.hypot(v.vx,v.vy)))*dt/6)),step=dt/steps;for(let sub=0;sub<steps;sub++){const active=s.stones.filter(v=>v.on);for(const a of active){a.x+=a.vx*step;a.y+=a.vy*step;a.vx*=Math.pow(.96,step);a.vy*=Math.pow(.96,step);a.angle=(a.angle||0)+(a.spin||0)*step;a.spin=(a.spin||0)*Math.pow(.93,step);if(s.pieceMode==='janggi')for(const hinge of flickHinges)hingeCollision(a,hinge);if(a.x<-a.r||a.x>600+a.r||a.y<-a.r||a.y>600+a.r)a.on=false}for(let i=0;i<active.length;i++)for(let j=i+1;j<active.length;j++){const a=active[i],b=active[j];if(!a.on||!b.on)continue;const dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy)||.01;if(dist<a.r+b.r){const nx=dx/dist,ny=dy/dist,overlap=(a.r+b.r-dist)/2;const ma=a.mass||1,mb=b.mass||1;a.x-=nx*overlap*2*mb/(ma+mb);a.y-=ny*overlap*2*mb/(ma+mb);b.x+=nx*overlap*2*ma/(ma+mb);b.y+=ny*overlap*2*ma/(ma+mb);const rel=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;if(rel>0){const impulse=1.84*rel/(1/ma+1/mb);a.vx-=impulse/ma*nx;a.vy-=impulse/ma*ny;b.vx+=impulse/mb*nx;b.vy+=impulse/mb*ny;const tangent=(b.vx-a.vx)*(-ny)+(b.vy-a.vy)*nx,friction=Math.max(-impulse*.08,Math.min(impulse*.08,-tangent/(1/ma+1/mb)));a.vx-=friction*(-ny)/ma;a.vy-=friction*nx/ma;b.vx+=friction*(-ny)/mb;b.vy+=friction*nx/mb;a.spin=(a.spin||0)+friction/(ma*a.r);b.spin=(b.spin||0)+friction/(mb*b.r)}}}}if(s.stones.filter(v=>v.on).every(v=>Math.hypot(v.vx,v.vy)<.13)){s.stones.forEach(v=>{v.vx=0;v.vy=0});const a=s.stones.filter(v=>v.on&&v.p===1).length,b=s.stones.filter(v=>v.on&&v.p===2).length;s.winner=!a&&!b?3:!a?2:!b?1:0;s.phase='aim';s.p=3-s.p}}
-export function flickAI(s){const own=s.stones.filter(v=>v.on&&v.p===s.p),enemy=s.stones.filter(v=>v.on&&v.p!==s.p);let best=null,d=Infinity;for(const a of own)for(const b of enemy){const distance=Math.hypot(a.x-b.x,a.y-b.y);if(distance<d){d=distance;best={id:a.id,dx:(b.x-a.x)/distance*145,dy:(b.y-a.y)/distance*145}}}return best}
+export function flickAI(s){
+ if(s.phase!=='aim'||s.winner)return null;
+ const own=s.stones.filter(v=>v.on&&v.p===s.p),enemy=s.stones.filter(v=>v.on&&v.p!==s.p),candidates=[];
+ for(const a of own)for(const b of enemy){
+  const distance=Math.hypot(b.x-a.x,b.y-a.y);if(distance<.001)continue;
+  const ux=(b.x-a.x)/distance,uy=(b.y-a.y)/distance;
+  const blocked=s.stones.some(o=>o.on&&o.id!==a.id&&o.id!==b.id&&o.p===s.p&&((o.x-a.x)*ux+(o.y-a.y)*uy)>0&&((o.x-a.x)*ux+(o.y-a.y)*uy)<distance&&Math.abs((o.x-a.x)*uy-(o.y-a.y)*ux)<a.r+o.r);
+  const edge=Math.min(b.x,b.y,600-b.x,600-b.y);
+  for(const strength of [110,145])candidates.push({id:a.id,dx:ux*strength,dy:uy*strength,priority:distance+edge*.3+(blocked?400:0),target:b.id});
+ }
+ candidates.sort((a,b)=>a.priority-b.priority);let best=candidates[0]||null,value=-Infinity;
+ const deadline=performance.now()+65;
+ // Evaluate bounded physical rollouts; friendly losses are more costly than gains.
+ for(const shot of candidates.slice(0,14)){
+  if(performance.now()>deadline)break;
+  const n=structuredClone(s);flickShoot(n,shot.id,shot.dx,shot.dy);
+  let ticks=0;while(n.phase==='moving'&&ticks++<200){flickTick(n);if(ticks%20===0&&performance.now()>deadline)break;}
+  const a=n.stones.filter(v=>v.on&&v.p===s.p),b=n.stones.filter(v=>v.on&&v.p!==s.p);
+  const target=n.stones.find(v=>v.id===shot.target),before=s.stones.find(v=>v.id===shot.target),push=target&&Math.hypot(target.x-before.x,target.y-before.y)||0;
+  const approach=a.length&&b.length?Math.min(...a.flatMap(v=>b.map(o=>Math.hypot(v.x-o.x,v.y-o.y)))):0;
+  const score=(enemy.length-b.length)*1000-(own.length-a.length)*1400+push*.3-approach*.15-(n.winner===s.p?0:shot.priority*.005);
+  if(score>value){value=score;best=shot;}
+ }
+ return best?{id:best.id,dx:best.dx,dy:best.dy}:null;
+}
 
 const mazeDistanceCache=new Map();
 function mazePathDistance(x,y,tx,ty){const key=tx+','+ty;if(!mazeDistanceCache.has(key)){let target=null,best=Infinity;for(let yy=0;yy<mazeMap.length;yy++)for(let xx=0;xx<mazeMap[yy].length;xx++)if(mazeOpen(xx,yy)){const d=Math.abs(xx-tx)+Math.abs(yy-ty);if(d<best){best=d;target=[xx,yy]}}const distances=new Map([[target.join(','),0]]),queue=[target];for(let i=0;i<queue.length;i++){const [xx,yy]=queue[i],d=distances.get(xx+','+yy);for(const [dx,dy]of [[1,0],[-1,0],[0,1],[0,-1]]){const a=xx+dx,b=yy+dy,k=a+','+b;if(mazeOpen(a,b)&&!distances.has(k)){distances.set(k,d+1);queue.push([a,b])}}}if(mazeDistanceCache.size>=64)mazeDistanceCache.delete(mazeDistanceCache.keys().next().value);mazeDistanceCache.set(key,distances)}return mazeDistanceCache.get(key).get(x+','+y)??1000}

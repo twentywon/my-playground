@@ -2,6 +2,29 @@ export const dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
 export function flips(b,r,c,p){if(b[r]?.[c]!==0)return [];let out=[];for(const [dr,dc]of dirs){let a=[],y=r+dr,x=c+dc;while(b[y]?.[x]===3-p){a.push([y,x]);y+=dr;x+=dc}if(b[y]?.[x]===p)out.push(...a)}return out}
 export function moves(b,p){return b.flatMap((row,r)=>row.flatMap((_,c)=>flips(b,r,c,p).length?[[r,c]]:[]))}
 export function five(b,r,c,p){return [[1,0],[0,1],[1,1],[1,-1]].some(([dy,dx])=>{let n=1;for(const s of [-1,1]){let y=r+dy*s,x=c+dx*s;while(b[y]?.[x]===p){n++;y+=dy*s;x+=dx*s}}return n>=5})}
+// A three must be extendible into four consecutive stones with two empty ends.
+// This is the selectable 33-only rule, not a full Renju ruleset (no 44/overline ban).
+export function gomokuForbidden(board,r,c,p,rule='free') {
+ if(rule==='free'||rule==='black33'&&p!==1||board[r]?.[c]!==0)return false;
+ const b=board.map(row=>[...row]);b[r][c]=p;
+ if(five(b,r,c,p))return false; // Completing five takes precedence.
+ let threes=0;
+ for(const [dy,dx]of [[1,0],[0,1],[1,1],[1,-1]]) {
+  let open=false;
+  for(let offset=-3;offset<=3&&!open;offset++) {
+   const y=r+dy*offset,x=c+dx*offset;if(b[y]?.[x]!==0)continue;
+   b[y][x]=p;
+   for(let start=-3;start<=0;start++) {
+    if(offset<start||offset>start+3)continue;
+    if(b[r+dy*(start-1)]?.[c+dx*(start-1)]!==0||b[r+dy*(start+4)]?.[c+dx*(start+4)]!==0)continue;
+    if([0,1,2,3].every(n=>b[r+dy*(start+n)]?.[c+dx*(start+n)]===p)){open=true;break;}
+   }
+   b[y][x]=0;
+  }
+  if(open&&++threes>=2)return true;
+ }
+ return false;
+}
 export function hexDist(a,b){return Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1]),Math.abs(a[0]+a[1]-b[0]-b[1]))}
 // Axial neighbors are stable across maps. Enumerate 18 reachable cells instead of
 // scanning the entire board for every piece.

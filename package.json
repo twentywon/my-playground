@@ -9,5 +9,8 @@
     "test": "node --test --test-isolation=none",
     "export": "node scripts/export.mjs",
     "package": "python3 scripts/package.py"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
